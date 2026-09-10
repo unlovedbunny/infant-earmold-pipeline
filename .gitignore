@@ -1,0 +1,19 @@
+# Python
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+
+# Nuxt / Node
+node_modules/
+.nuxt/
+.output/
+dist/
+*.log
+
+# Data
+temp/
+output/

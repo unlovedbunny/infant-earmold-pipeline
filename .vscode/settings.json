@@ -1,5 +1,5 @@
 {
-    "python.defaultInterpreterPath": ".venv/Scripts/python.exe",
+    "python.defaultInterpreterPath": "C:\\Users\\nicholas.lima\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
     "python.analysis.extraPaths": [
         "./src"
     ]

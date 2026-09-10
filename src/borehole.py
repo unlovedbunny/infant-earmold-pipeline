@@ -25,7 +25,7 @@ import pathlib
 from typing import Any, List, Optional, Tuple, cast
 
 import numpy as np
-import trimesh
+import trimesh # type: ignore if pylance hasn't refreshed
 
 # ==============================================================================
 # Constantes de Segurança Estrutural
