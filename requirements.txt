@@ -1,0 +1,22 @@
+# ==============================================================================
+# AuriMold (Hackafono) — Dependências do Projeto
+# Versões estáveis validadas para Python 3.10+
+# ==============================================================================
+
+# --- Core Geométrico ---
+trimesh>=4.4.0
+numpy>=1.26.0
+scipy>=1.13.0
+manifold3d>=2.5.0            # Motor booleano robusto (fallback para Trimesh)
+networkx>=3.0                # Grafo de adjacência para split() e fill_holes()
+
+# --- Utilitários ---
+requests>=2.32.0              # Chamadas HTTP para APIs de IA (OpenRouter / HF)
+pyyaml>=6.0.1                 # Leitura de arquivos de configuração YAML
+
+# --- Opcional (pesado, instalar se necessário para visualização) ---
+# open3d>=0.18.0
+
+
+# --- Opcional (Visualização durante desenvolvimento) ---
+# matplotlib>=3.9.0

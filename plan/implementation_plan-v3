@@ -1,0 +1,123 @@
+# Desenvolvimento da Plataforma AuriMold
+
+Este documento apresenta a revisão crítica da arquitetura proposta e o plano de implementação (Roadmap) detalhado para a plataforma web de processamento automatizado de moldes auriculares 3D infantis (AuriMold), de acordo com as diretrizes de engenharia de software biomédico e a separação estrita entre responsabilidades geométricas determinísticas e análise auxiliar de IA.
+
+## User Review Required
+
+> [!IMPORTANT]
+> Aprovação explícita necessária: Este plano constitui a **Primeira Resposta Obrigatória** (Regra #63). Nenhum código será gerado até que você valide esta análise arquitetural e autorize o início do Milestone 1.
+
+## Revisão Crítica da Arquitetura Proposta
+
+Em conformidade com a Regra #63, segue a análise estruturada de riscos e inconsistências da especificação, bem como as correções a serem adotadas.
+
+### 1. Problemas Matemáticos
+O cálculo da espessura ("thickness") não pode depender de medições simplificadas ao longo de uma malha imperfeita. O uso exclusivo de *ray casting* pode falhar em regiões de alta curvatura ou sub-cortes (*undercuts*).
+**Correção**: O cálculo da parede residual será otimizado utilizando *Distance Fields* ou análise iterativa de *Closest Point* para garantir a verificação da espessura em relação a todas as faces da região. O limite configurado (ex: 1.2 mm) será estritamente tratado como parâmetro computacional e não clínico.
+
+### 2. Problemas de Arquitetura
+Processamento síncrono no FastAPI bloquearia workers e causaria *timeouts* no Nuxt ao lidar com STLs pesados.
+**Correção**: A API adotará um padrão assíncrono (Job ID) imediatamente a partir do Milestone 1. O pipeline geométrico será executado em processos independentes (via `asyncio` e background tasks do FastAPI) para não travar a API HTTP.
+
+### 3. Problemas de Segurança
+Processar arquivos STL enviados pelo usuário diretamente com bibliotecas C subjacentes (como Open3D/Trimesh) apresenta riscos de *buffer overflow* ou esgotamento de memória.
+**Correção**: Implementaremos *circuit breakers*: limite estrito de tamanho de arquivo, restrição de uso de memória no carregamento inicial e isolamento em arquivos temporários que são excluídos via bloco `finally`.
+
+### 4. Problemas de Privacidade
+O envio integral de uma malha 3D anatômica para APIs de IA externas (como OpenRouter/HuggingFace) pode violar princípios de anonimização médica.
+**Correção**: A IA receberá **somente metadados e estatísticas extraídas** (ex: *bounding box*, contagem de vértices, curvatura média, alertas booleanos). A malha STL em si nunca sairá do servidor backend local.
+
+### 5. Problemas na Integração Nuxt/Python
+Comunicação baseada em sockets pode ser prematura e complexa para o MVP.
+**Correção**: Utilizaremos *Polling* do Job ID (via HTTP GET `jobs/{id}`) como abordagem inicial para o Nuxt obter o progresso do FastAPI, garantindo resiliência se a conexão do cliente cair.
+
+### 6. Problemas na Utilização de IA
+Delegar à IA a capacidade de gerar coordenadas espaciais ou aprovar a segurança geométrica introduz alucinações perigosas.
+**Correção**: A IA (`AIService`) operará em um pipeline puramente "read-only". Recebe um JSON de relatório métrico validado e retorna apenas textos estruturados com insights, hipóteses ou explicações de usabilidade para o fonoaudiólogo.
+
+### 7. Problemas nos Algoritmos de Segmentação
+Assumir que a orientação do arquivo STL sempre aponta o meato auditivo para o eixo Z é uma falha comum em escaneamentos.
+**Correção**: Implementaremos a detecção do *bounding box* orientado e uma análise por componentes principais (PCA) para extrair os eixos anatômicos reais antes de aplicar heurísticas de poda e segmentação.
+
+### 8. Problemas nos Algoritmos de Espessura
+Se a operação booleana introduzir faces degeneradas na vizinhança da perfuração, o cálculo de espessura retornará falsos positivos.
+**Correção**: A validação final fará um reparo e checagem de integridade da malha ("watertight") *antes* de executar a validação de espessura na malha resultante.
+
+### 9. Problemas nas Operações Booleanas
+Diferenças booleanas entre cilindros perfeitos e malhas orgânicas sujas tendem a falhar ou travar.
+**Correção**: Criaremos o `BooleanEngine` com estratégia de fallback: tenta o Trimesh via Blender/Carve; se falhar, tenta CGAL via Python ou Open3D com re-meshing (*Voxelization* ou reparo topológico).
+
+### 10. Problemas na Detecção Automática de Escala
+Scanners diferentes exportam em milímetros, centímetros ou polegadas, e alguns sequer declaram a unidade no STL.
+**Correção**: Implementar `ScaleDetectionResult` que analisa o maior eixo do *bounding box*. Se a dimensão máxima cair fora de um intervalo razoável para uma orelha infantil (ex: 20 a 70 mm), o pipeline não aplicará conversão arbitrária; em vez disso, retornará o status `NEEDS_REVIEW` e pedirá intervenção.
+
+### 11. Riscos de Generalização
+Construir os algoritmos apenas com base em `RAVI_2.stl` criará sobreajuste.
+**Correção**: Os limiares de curvatura para isolamento da concha e conduto serão paramétricos (com valores default derivados de médias, mas ajustáveis) para evitar falhas em escaneamentos mais ruidosos ou atípicos.
+
+### 12. Riscos de Utilizar Imagens 2D como Referência Geométrica
+As imagens no diretório `assets/docs/` não contêm metadados de calibração espacial 3D.
+**Correção**: Elas serão tratadas apenas como referência de UX e *guidelines* de desenvolvimento. A geometria gerada utilizará as normais, seções transversais e densidades intrínsecas da malha.
+
+### 13. Riscos Clínicos
+O uso de termos como "seguro para uso" pode implicar responsabilidade legal.
+**Correção**: O *frontend* e a IA gerarão apenas alertas técnicos: "Limiar computacional atingido" ou "Geometria dentro das especificações fornecidas". A decisão clínica permanece totalmente isolada.
+
+### 14. Riscos de Segurança Web
+*Path traversal* na rota de download de STLs.
+**Correção**: O endpoint de exportação utilizará IDs UUID ou hashes únicos. Exemplo: `/api/v1/jobs/{job_id}/download`, e o arquivo será mapeado sem concatenar nomes fornecidos pelo usuário no *filesystem*.
+
+---
+
+## Arquitetura Final Proposta
+
+**1. Nuxt (Frontend Web)**
+- **Responsabilidade**: Experiência do usuário profissional, upload assíncrono, renderização 3D interativa (via `Three.js`), painel de configuração paramétrica, acompanhamento de *jobs* e exibição dos resultados.
+
+**2. FastAPI (Backend Geométrico & API)**
+- **Responsabilidade**: Orquestração dos *jobs*, isolamento de arquivos submetidos, roteamento seguro, tratamento de concorrência e *endpoints* de comunicação.
+
+**3. Engine Geométrico (Módulos Python Isolados)**
+- **Responsabilidade**: Executar o pipeline (escala, limpeza, segmentação, traçado de trajetória, perfuração e testes geométricos de espessura/topologia) utilizando *Trimesh* e *Open3D*.
+
+**4. Camada de Inteligência Artificial (`AIService`)**
+- **Responsabilidade**: Conectar com provedores externos (ex: OpenRouter/HuggingFace) apenas para enriquecer o relatório do processamento, atuando de forma totalmente dissociada da geometria em si.
+
+---
+
+## Roadmap de Implementação
+
+Em obediência à Regra #64, o projeto será construído em *milestones* atômicos. O andamento ocorrerá apenas após sua aprovação em cada fase.
+
+### Milestone 1: Backend Mínimo
+- Inicializar FastAPI.
+- Configurar rotas estruturadas de Upload de STL com validações de segurança.
+- Implementar análise básica inicial da malha (inspeção de tamanho, faces, vértices).
+- Criar a base de comunicação assíncrona (geração de `job_id`).
+
+### Milestone 2: Frontend
+- Configurar base Nuxt.
+- Tela profissional para Upload e formulário de parâmetros clínicos.
+- Integração de Viewer 3D mínimo (Three.js) para a malha original.
+
+### Milestone 3: Pipeline Geométrico - Limpeza e Segmentação
+- Implementar as fases isoladas: normalização (escala), `cleaning.py` e extração da região alvo (`segmentation.py` e `trimming.py`).
+
+### Milestone 4: Perfuração Booleana
+- Cálculo da trajetória paramétrica base (`trajectory.py`).
+- Geração do túnel paramétrico (`tunnel.py`).
+- Implementação segura do `BooleanEngine` com fallback (`boolean.py`).
+
+### Milestone 5: Segurança Estrutural e Validação
+- Módulo iterativo de `thickness.py` (garantia do limite paramétrico, ex: 1.2mm).
+- `topology.py` para atestar manifold e estanqueidade.
+- Sistema de falha segura (`NEEDS_REVIEW`).
+
+### Milestone 6: Assistência de IA
+- Implementação da camada abstrata `AIService`.
+- Geração de explicação interpretativa dos relatórios do pipeline.
+
+### Milestone 7 & 8: Integração Completa e Finalização
+- Fechar o loop completo entre Nuxt, FastAPI e resultados processados.
+- Testes automatizados (pytest).
+- Dockerização e documentação técnica de apoio.

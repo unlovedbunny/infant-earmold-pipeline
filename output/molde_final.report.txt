@@ -1,0 +1,26 @@
+============================================================
+RELATÓRIO DE CONFORMIDADE  -  AuriMold Pipeline
+============================================================
+
+Status Geral: ⚠️ REQUER REVISÃO
+
+--- Parâmetros Clínicos ---
+  Diâmetro do tubo     : 2.00 mm
+  Folga de ajuste      : 0.30 mm
+  Ângulo de inserção   : 15.0°
+  Espessura mín. requerida : 1.20 mm
+
+--- Métricas de Segmentação ---
+  Estanque (watertight)  : Não
+  Volume do molde        : 0.00 mm³
+  Buracos preenchidos    : 220
+
+--- Métricas de Perfuração ---
+  Espessura mín. medida  : 0.00 mm
+  Espessura média        : 0.00 mm
+  Violações de espessura : 0
+  Parede segura          : Sim
+
+⚠️ ATENÇÃO: A malha não é estanque. Operações booleanas podem ter produzido artefatos. Verifique manualmente no fatiador.
+
+============================================================
